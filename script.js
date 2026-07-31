@@ -29,10 +29,23 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let audioBuffer = null;
 const midiButtonMap = {};
 
-let peer = null;
-let connection = null;
+// Генерируем ID пользователя и никнейм
+const myUserId = "usr_" + Math.floor(Math.random() * 89999 + 10000);
 let myNickname = "User_" + Math.floor(Math.random() * 900 + 100);
 if (nickInput) nickInput.value = myNickname;
+
+// Конфигурация бесплатной базы данных Firebase
+const firebaseConfig = {
+    databaseURL: "https://firebasedatabase.app"
+};
+
+// Инициализируем сеть
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let currentRoomId = null;
+let roomRef = null;
+let myPlayerRef = null;
 
 function hexToRgb(hex) {
     if (!hex) return { r: 0, g: 0, b: 0 };
@@ -80,13 +93,13 @@ function createGrid() {
             
             btn.onclick = () => {
                 playNote(semitones, btn);
-                sendNoteToFriend(semitones);
+                sendNoteToFirebase(semitones);
             };
             grid.appendChild(btn);
         }
     }
     updateColors();
-    updatePlayersUI();
+    updatePlayersListUI({});
 }
 
 async function playNote(semitones, btn, isRemote = false) {
@@ -106,75 +119,70 @@ async function playNote(semitones, btn, isRemote = false) {
     }
 }
 
-function updatePlayersUI(friendNick = null) {
+function updatePlayersListUI(playersObj) {
     if (!playersList) return;
-    playersList.innerHTML = "<li>" + myNickname + " (Вы)</li>";
-    if (friendNick) {
-        playersList.innerHTML += "<li>" + friendNick + "</li>";
+    playersList.innerHTML = "";
+    
+    let hasPlayers = false;
+    for (let id in playersObj) {
+        hasPlayers = true;
+        const p = playersObj[id];
+        const isMe = id === myUserId;
+        playersList.innerHTML += "<li>" + p.nickname + (isMe ? " (Вы)" : "") + "</li>";
+    }
+    
+    if (!hasPlayers) {
+        playersList.innerHTML = "<li>" + myNickname + " (Вы)</li>";
     }
 }
 
-if (nickInput) {
-    nickInput.onchange = () => {
-        myNickname = nickInput.value.trim() || "User";
-        updatePlayersUI(connection ? connection.peerNickname : null);
-        if (connection && connection.open) {
-            connection.send({ type: "nick-update", nickname: myNickname });
-        }
-    };
-}
+// ПОДКЛЮЧЕНИЕ К КОМНАТЕ СЕТИ
+function connectToRoom(roomId) {
+    currentRoomId = roomId;
+    if (roomInput) roomInput.value = roomId;
+    statusText.innerText = "В комнате: " + roomId;
 
-function initPeer(customRoomId = null) {
-    if (peer) return;
-    if (statusText) statusText.innerText = "Подключение...";
-    
-    // Подключаемся к чистому PeerJS серверу
-    peer = customRoomId ? new Peer(customRoomId) : new Peer();
+    // Ссылка на базу данных нашей комнаты
+    roomRef = db.ref("rooms/" + roomId);
+    myPlayerRef = roomRef.child("players/" + myUserId);
 
-    peer.on('open', (id) => {
-        if (statusText) statusText.innerText = "Код: " + id;
-        if (roomInput) roomInput.value = id;
+    // Записываем себя в онлайн-список комнаты
+    myPlayerRef.set({ nickname: myNickname });
+    // Автоудаление из базы при закрытии вкладки
+    myPlayerRef.onDisconnect().remove();
+
+    // Слушаем список игроков онлайн
+    roomRef.child("players").on("value", (snapshot) => {
+        const players = snapshot.val() || {};
+        updatePlayersListUI(players);
     });
 
-    peer.on('connection', (conn) => {
-        connection = conn;
-        setupConnectionListeners();
-    });
-    
-    peer.on('error', (err) => {
-        if (statusText) statusText.innerText = "Ошибка сети P2P";
-        console.error(err);
-    });
-}
-
-function setupConnectionListeners() {
-    if (statusText) statusText.innerText = "Связь есть!";
-    connection.on('open', () => {
-        connection.send({ type: "nick-update", nickname: myNickname });
-    });
-
-    connection.on('data', (data) => {
-        if (data.type === "nick-update") {
-            connection.peerNickname = data.nickname;
-            updatePlayersUI(data.nickname);
-        }
-        if (data.type === "note") {
+    // Слушаем появление новых нот от других игроков
+    roomRef.child("last_note").on("value", (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.sender !== myUserId) {
             const targetMidi = 60 + data.semitones;
             const targetBtn = midiButtonMap[targetMidi];
             playNote(data.semitones, targetBtn, true);
         }
     });
+}
 
-    connection.on('close', () => {
-        if (statusText) statusText.innerText = "Отключено";
-        updatePlayersUI();
-        connection = null;
-    });
+if (nickInput) {
+    nickInput.onchange = () => {
+        myNickname = nickInput.value.trim() || "User";
+        if (myPlayerRef) {
+            myPlayerRef.update({ nickname: myNickname });
+        } else {
+            updatePlayersListUI({});
+        }
+    };
 }
 
 if (btnCreateRoom) {
     btnCreateRoom.onclick = () => {
-        initPeer(); // Чистый запуск — сервер выдаст рабочий ID сам
+        const generatedId = "rm_" + Math.floor(Math.random() * 8999 + 1000);
+        connectToRoom(generatedId);
     };
 }
 
@@ -182,24 +190,18 @@ if (btnJoinRoom) {
     btnJoinRoom.onclick = () => {
         const targetRoom = roomInput.value.trim();
         if (!targetRoom) return alert("Введите код комнаты!");
-        if (!peer) {
-            peer = new Peer();
-            peer.on('open', () => { connectToFriend(targetRoom); });
-        } else {
-            connectToFriend(targetRoom);
-        }
+        connectToRoom(targetRoom);
     };
 }
 
-function connectToFriend(targetRoom) {
-    if (statusText) statusText.innerText = "Подключение...";
-    connection = peer.connect(targetRoom);
-    setupConnectionListeners();
-}
-
-function sendNoteToFriend(semitones) {
-    if (connection && connection.open) {
-        connection.send({ type: "note", semitones: semitones });
+function sendNoteToFirebase(semitones) {
+    if (roomRef) {
+        // Записываем ноту в облако. Firebase тут же обновит её у всех игроков
+        roomRef.child("last_note").set({
+            sender: myUserId,
+            semitones: semitones,
+            timestamp: Date.now()
+        });
     }
 }
 
@@ -207,15 +209,14 @@ if (fileInput) {
     fileInput.onchange = async (e) => {
         const fileTarget = e.target;
         if (!fileTarget.files || fileTarget.files.length === 0) return;
-        if (statusText) statusText.innerText = "Загрузка...";
+        statusText.innerText = "Загрузка...";
         try {
             const chosenFile = fileTarget.files.item(0); 
             const arrayBuffer = await chosenFile.arrayBuffer();
             audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            if (statusText) statusText.innerText = chosenFile.name;
+            statusText.innerText = chosenFile.name;
         } catch (err) {
-            if (statusText) statusText.innerText = "Ошибка MP3";
-            console.error(err);
+            statusText.innerText = "Ошибка MP3";
         }
     };
 }
@@ -234,7 +235,7 @@ if (navigator.requestMIDIAccess) {
                     const btn = midiButtonMap[note];
                     const semitones = note - 60;
                     playNote(semitones, btn);
-                    sendNoteToFriend(semitones);
+                    sendNoteToFirebase(semitones);
                 }
             };
         }

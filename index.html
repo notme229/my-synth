@@ -2,10 +2,12 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Мультиплеерный Сэмплер 12х7</title>
+    <title>Firebase Мультиплеерный Сэмплер</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Подключаем бесплатную мировую библиотеку PeerJS -->
-    <script src="https://unpkg.com"></script>
+    
+    <!-- Подключаем официальные базы данных Google Firebase -->
+    <script src="https://gstatic.com"></script>
+    <script src="https://gstatic.com"></script>
 </head>
 <body>
 
@@ -13,7 +15,7 @@
     <div class="sidebar" id="players-sidebar">
         <h3>В комнате:</h3>
         <ul id="players-list">
-            <!-- Здесь будут ники подключенных людей -->
+            <!-- Ники будут грузиться из Firebase -->
         </ul>
     </div>
 
@@ -29,12 +31,11 @@
             </label>
         </div>
 
-        <!-- Поле для ввода Ника -->
         <div class="panel-section">
             <input type="text" id="nickname-input" placeholder="Ваш ник..." maxlength="15">
         </div>
 
-        <!-- Раздел мультиплеера -->
+        <!-- Раздел комнат через Firebase -->
         <div class="panel-section p2p-controls">
             <button id="btn-create-room" class="btn-main">🏠 Создать комнату</button>
             <input type="text" id="room-input" placeholder="Код комнаты..." maxlength="10">
