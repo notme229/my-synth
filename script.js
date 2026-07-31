@@ -126,7 +126,9 @@ if (nickInput) {
 
 function initPeer(customRoomId = null) {
     if (peer) return;
-    if (statusText) statusText.innerText = "Подключение к P2P...";
+    if (statusText) statusText.innerText = "Подключение...";
+    
+    // Подключаемся к чистому PeerJS серверу
     peer = customRoomId ? new Peer(customRoomId) : new Peer();
 
     peer.on('open', (id) => {
@@ -137,6 +139,11 @@ function initPeer(customRoomId = null) {
     peer.on('connection', (conn) => {
         connection = conn;
         setupConnectionListeners();
+    });
+    
+    peer.on('error', (err) => {
+        if (statusText) statusText.innerText = "Ошибка сети P2P";
+        console.error(err);
     });
 }
 
@@ -167,8 +174,7 @@ function setupConnectionListeners() {
 
 if (btnCreateRoom) {
     btnCreateRoom.onclick = () => {
-        const randomRoomId = "rm_" + Math.floor(Math.random() * 8999 + 1000);
-        initPeer(randomRoomId);
+        initPeer(); // Чистый запуск — сервер выдаст рабочий ID сам
     };
 }
 
@@ -199,14 +205,14 @@ function sendNoteToFriend(semitones) {
 
 if (fileInput) {
     fileInput.onchange = async (e) => {
-        if (!e.target.files || e.target.files.length === 0) return;
+        const fileTarget = e.target;
+        if (!fileTarget.files || fileTarget.files.length === 0) return;
         if (statusText) statusText.innerText = "Загрузка...";
         try {
-            // Исправлено: Сюда добавлен индекс, чтобы читать именно первый файл
-            const file = e.target.files[0]; 
-            const arrayBuffer = await file.arrayBuffer();
+            const chosenFile = fileTarget.files.item(0); 
+            const arrayBuffer = await chosenFile.arrayBuffer();
             audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            if (statusText) statusText.innerText = file.name;
+            if (statusText) statusText.innerText = chosenFile.name;
         } catch (err) {
             if (statusText) statusText.innerText = "Ошибка MP3";
             console.error(err);
@@ -221,9 +227,9 @@ if (navigator.requestMIDIAccess) {
     navigator.requestMIDIAccess().then(midi => {
         for (let input of midi.inputs.values()) {
             input.onmidimessage = (msg) => {
-                const cmd = msg.data[0];
-                const note = msg.data[1];
-                const vel = msg.data[2];
+                const cmd = msg.data;
+                const note = msg.data;
+                const vel = msg.data;
                 if (cmd === 144 && vel > 0) {
                     const btn = midiButtonMap[note];
                     const semitones = note - 60;
