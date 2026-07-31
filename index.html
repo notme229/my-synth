@@ -2,18 +2,34 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Music Matrix 12x7</title>
+    <title>Мультиплеерный Сэмплер 12х7</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+    <!-- Боковая панель списка игроков -->
+    <div class="sidebar" id="players-sidebar">
+        <h3>Игроки онлайн (<span id="online-count">0</span>)</h3>
+        <ul id="players-list">
+            <!-- Список игроков будет заполняться сервером -->
+        </ul>
+    </div>
+
+    <!-- Основная сетка кнопок -->
     <div id="synth-grid" class="grid-container"></div>
 
+    <!-- Нижняя панель управления -->
     <div class="bottom-panel" id="main-panel">
         <div class="panel-section">
             <label class="btn-main">
                 📁 Звук (MP3)
                 <input type="file" id="audio-file" accept="audio/*">
             </label>
+        </div>
+
+        <!-- Поле для ввода Ника -->
+        <div class="panel-section">
+            <input type="text" id="nickname-input" placeholder="Введите ваш ник..." maxlength="15">
         </div>
 
         <div class="panel-section colors">
@@ -30,6 +46,7 @@
         
         <div id="status-text">Загрузите MP3</div>
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
