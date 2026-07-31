@@ -29,17 +29,14 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let audioBuffer = null;
 const midiButtonMap = {};
 
-// Генерируем ID пользователя и никнейм
 const myUserId = "usr_" + Math.floor(Math.random() * 89999 + 10000);
 let myNickname = "User_" + Math.floor(Math.random() * 900 + 100);
 if (nickInput) nickInput.value = myNickname;
 
-// Конфигурация бесплатной базы данных Firebase
 const firebaseConfig = {
     databaseURL: "https://firebasedatabase.app"
 };
 
-// Инициализируем сеть
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -136,28 +133,22 @@ function updatePlayersListUI(playersObj) {
     }
 }
 
-// ПОДКЛЮЧЕНИЕ К КОМНАТЕ СЕТИ
 function connectToRoom(roomId) {
     currentRoomId = roomId;
     if (roomInput) roomInput.value = roomId;
     statusText.innerText = "В комнате: " + roomId;
 
-    // Ссылка на базу данных нашей комнаты
     roomRef = db.ref("rooms/" + roomId);
     myPlayerRef = roomRef.child("players/" + myUserId);
 
-    // Записываем себя в онлайн-список комнаты
     myPlayerRef.set({ nickname: myNickname });
-    // Автоудаление из базы при закрытии вкладки
     myPlayerRef.onDisconnect().remove();
 
-    // Слушаем список игроков онлайн
     roomRef.child("players").on("value", (snapshot) => {
         const players = snapshot.val() || {};
         updatePlayersListUI(players);
     });
 
-    // Слушаем появление новых нот от других игроков
     roomRef.child("last_note").on("value", (snapshot) => {
         const data = snapshot.val();
         if (data && data.sender !== myUserId) {
@@ -196,7 +187,6 @@ if (btnJoinRoom) {
 
 function sendNoteToFirebase(semitones) {
     if (roomRef) {
-        // Записываем ноту в облако. Firebase тут же обновит её у всех игроков
         roomRef.child("last_note").set({
             sender: myUserId,
             semitones: semitones,
@@ -224,22 +214,6 @@ if (fileInput) {
 const allInputs = [corners.tl, corners.tr, corners.bl, corners.br, uiColors.bg, uiColors.panel];
 allInputs.forEach(i => { if(i) i.oninput = updateColors; });
 
-if (navigator.requestMIDIAccess) {
-    navigator.requestMIDIAccess().then(midi => {
-        for (let input of midi.inputs.values()) {
-            input.onmidimessage = (msg) => {
-                const cmd = msg.data;
-                const note = msg.data;
-                const vel = msg.data;
-                if (cmd === 144 && vel > 0) {
-                    const btn = midiButtonMap[note];
-                    const semitones = note - 60;
-                    playNote(semitones, btn);
-                    sendNoteToFirebase(semitones);
-                }
-            };
-        }
-    });
-}
+// Временный полный сброс MIDI-кода во избежание скрытых синтаксических ошибок
 
 createGrid();
