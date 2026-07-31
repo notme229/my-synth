@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Music Matrix 12x7</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="synth-grid" class="grid-container"></div>
+
+    <div class="bottom-panel" id="main-panel">
+        <div class="panel-section">
+            <label class="btn-main">
+                📁 Звук (MP3)
+                <input type="file" id="audio-file" accept="audio/*">
+            </label>
+        </div>
+
+        <div class="panel-section colors">
+            <div class="color-item">↖️ <input type="color" id="color-tl" value="#0000ff"></div>
+            <div class="color-item">↗️ <input type="color" id="color-tr" value="#00ff00"></div>
+            <div class="color-item">↙️ <input type="color" id="color-bl" value="#000033"></div>
+            <div class="color-item">↘️ <input type="color" id="color-br" value="#003300"></div>
+        </div>
+
+        <div class="panel-section">
+            <div class="color-item">Фон: <input type="color" id="color-bg" value="#0a0a0a"></div>
+            <div class="color-item">Меню: <input type="color" id="color-ui" value="#1e1e1e"></div>
+        </div>
+        
+        <div id="status-text">Загрузите MP3</div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
