@@ -5,10 +5,6 @@ const panel = document.getElementById('main-panel');
 const nickInput = document.getElementById('nickname-input');
 const playersList = document.getElementById('players-list');
 
-const btnCreateRoom = document.getElementById('btn-create-room');
-const btnJoinRoom = document.getElementById('btn-join-room');
-const roomInput = document.getElementById('room-input');
-
 const corners = {
     tl: document.getElementById('color-tl'),
     tr: document.getElementById('color-tr'),
@@ -25,6 +21,10 @@ const ROWS = 7;
 const NOTE_STR = "C,C#,D,D#,E,F,F#,G,G#,A,A#,B";
 const NOTE_NAMES = NOTE_STR.split(",");
 
+// Задаем октавы строкой, чтобы избежать ошибок фильтрации
+const OCTAVE_STR = "7,6,5,4,3,2,1";
+const OCTAVES = OCTAVE_STR.split(",");
+
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let audioBuffer = null;
 const midiButtonMap = {};
@@ -33,16 +33,8 @@ const myUserId = "usr_" + Math.floor(Math.random() * 89999 + 10000);
 let myNickname = "User_" + Math.floor(Math.random() * 900 + 100);
 if (nickInput) nickInput.value = myNickname;
 
-const firebaseConfig = {
-    databaseURL: "https://firebasedatabase.app"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-let currentRoomId = null;
-let roomRef = null;
-let myPlayerRef = null;
+// Встроенный канал мультиплеера внутри вашего браузера
+const jamChannel = new BroadcastChannel("synth_jam_session");
 
 function hexToRgb(hex) {
     if (!hex) return { r: 0, g: 0, b: 0 };
@@ -75,7 +67,7 @@ function createGrid() {
     if (!grid) return;
     grid.innerHTML = '';
     for (let row = 0; row < ROWS; row++) {
-        const currentOctave = 7 - row; 
+        const currentOctave = parseInt(OCTAVES[row]); 
         for (let col = 0; col < COLUMNS; col++) {
             const btn = document.createElement('button');
             btn.className = 'music-btn';
@@ -90,13 +82,19 @@ function createGrid() {
             
             btn.onclick = () => {
                 playNote(semitones, btn);
-                sendNoteToFirebase(semitones);
+                // Передаем ноту в мультиплеерный канал
+                jamChannel.postMessage({
+                    type: "note",
+                    sender: myUserId,
+                    senderNick: myNickname,
+                    semitones: semitones
+                });
             };
             grid.appendChild(btn);
         }
     }
     updateColors();
-    updatePlayersListUI({});
+    updatePlayersListUI();
 }
 
 async function playNote(semitones, btn, isRemote = false) {
@@ -116,84 +114,35 @@ async function playNote(semitones, btn, isRemote = false) {
     }
 }
 
-function updatePlayersListUI(playersObj) {
+function updatePlayersListUI(friendNick = null) {
     if (!playersList) return;
-    playersList.innerHTML = "";
-    
-    let hasPlayers = false;
-    for (let id in playersObj) {
-        hasPlayers = true;
-        const p = playersObj[id];
-        const isMe = id === myUserId;
-        playersList.innerHTML += "<li>" + p.nickname + (isMe ? " (Вы)" : "") + "</li>";
+    playersList.innerHTML = "<li>" + myNickname + " (Вы)</li>";
+    if (friendNick) {
+        playersList.innerHTML += "<li>" + friendNick + "</li>";
     }
-    
-    if (!hasPlayers) {
-        playersList.innerHTML = "<li>" + myNickname + " (Вы)</li>";
-    }
-}
-
-function connectToRoom(roomId) {
-    currentRoomId = roomId;
-    if (roomInput) roomInput.value = roomId;
-    statusText.innerText = "В комнате: " + roomId;
-
-    roomRef = db.ref("rooms/" + roomId);
-    myPlayerRef = roomRef.child("players/" + myUserId);
-
-    myPlayerRef.set({ nickname: myNickname });
-    myPlayerRef.onDisconnect().remove();
-
-    roomRef.child("players").on("value", (snapshot) => {
-        const players = snapshot.val() || {};
-        updatePlayersListUI(players);
-    });
-
-    roomRef.child("last_note").on("value", (snapshot) => {
-        const data = snapshot.val();
-        if (data && data.sender !== myUserId) {
-            const targetMidi = 60 + data.semitones;
-            const targetBtn = midiButtonMap[targetMidi];
-            playNote(data.semitones, targetBtn, true);
-        }
-    });
 }
 
 if (nickInput) {
     nickInput.onchange = () => {
         myNickname = nickInput.value.trim() || "User";
-        if (myPlayerRef) {
-            myPlayerRef.update({ nickname: myNickname });
-        } else {
-            updatePlayersListUI({});
-        }
+        updatePlayersListUI();
+        jamChannel.postMessage({ type: "ping", nickname: myNickname });
     };
 }
 
-if (btnCreateRoom) {
-    btnCreateRoom.onclick = () => {
-        const generatedId = "rm_" + Math.floor(Math.random() * 8999 + 1000);
-        connectToRoom(generatedId);
-    };
-}
-
-if (btnJoinRoom) {
-    btnJoinRoom.onclick = () => {
-        const targetRoom = roomInput.value.trim();
-        if (!targetRoom) return alert("Введите код комнаты!");
-        connectToRoom(targetRoom);
-    };
-}
-
-function sendNoteToFirebase(semitones) {
-    if (roomRef) {
-        roomRef.child("last_note").set({
-            sender: myUserId,
-            semitones: semitones,
-            timestamp: Date.now()
-        });
+// СЛУШАЕМ ДРУГИХ ИГРОКОВ В КАНАЛЕ
+jamChannel.onmessage = (event) => {
+    const data = event.data;
+    if (data.type === "note") {
+        const targetMidi = 60 + data.semitones;
+        const targetBtn = midiButtonMap[targetMidi];
+        playNote(data.semitones, targetBtn, true);
+        updatePlayersListUI(data.senderNick);
     }
-}
+    if (data.type === "ping") {
+        updatePlayersListUI(data.nickname);
+    }
+};
 
 if (fileInput) {
     fileInput.onchange = async (e) => {
@@ -214,6 +163,6 @@ if (fileInput) {
 const allInputs = [corners.tl, corners.tr, corners.bl, corners.br, uiColors.bg, uiColors.panel];
 allInputs.forEach(i => { if(i) i.oninput = updateColors; });
 
-// Временный полный сброс MIDI-кода во избежание скрытых синтаксических ошибок
-
 createGrid();
+// Оповещаем другие вкладки о своем присутствии
+setTimeout(() => { jamChannel.postMessage({ type: "ping", nickname: myNickname }); }, 500);

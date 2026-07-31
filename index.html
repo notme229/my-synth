@@ -2,12 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Firebase Мультиплеерный Сэмплер</title>
+    <title>Мультиплеерный Сэмплер 12х7</title>
     <link rel="stylesheet" href="style.css">
-    
-    <!-- Подключаем официальные базы данных Google Firebase -->
-    <script src="https://gstatic.com"></script>
-    <script src="https://gstatic.com"></script>
 </head>
 <body>
 
@@ -15,7 +11,7 @@
     <div class="sidebar" id="players-sidebar">
         <h3>В комнате:</h3>
         <ul id="players-list">
-            <!-- Ники будут грузиться из Firebase -->
+            <!-- Сюда будут добавляться ники -->
         </ul>
     </div>
 
@@ -33,13 +29,6 @@
 
         <div class="panel-section">
             <input type="text" id="nickname-input" placeholder="Ваш ник..." maxlength="15">
-        </div>
-
-        <!-- Раздел комнат через Firebase -->
-        <div class="panel-section p2p-controls">
-            <button id="btn-create-room" class="btn-main">🏠 Создать комнату</button>
-            <input type="text" id="room-input" placeholder="Код комнаты..." maxlength="10">
-            <button id="btn-join-room" class="btn-main">🔌 Войти</button>
         </div>
 
         <div class="panel-section colors">
