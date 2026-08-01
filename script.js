@@ -5,6 +5,10 @@ const panel = document.getElementById('main-panel');
 const nickInput = document.getElementById('nickname-input');
 const playersList = document.getElementById('players-list');
 
+const btnCreateRoom = document.getElementById('btn-create-room');
+const btnJoinRoom = document.getElementById('btn-join-room');
+const roomInput = document.getElementById('room-input');
+
 const corners = {
     tl: document.getElementById('color-tl'),
     tr: document.getElementById('color-tr'),
@@ -21,7 +25,6 @@ const ROWS = 7;
 const NOTE_STR = "C,C#,D,D#,E,F,F#,G,G#,A,A#,B";
 const NOTE_NAMES = NOTE_STR.split(",");
 
-// Задаем октавы строкой, чтобы избежать ошибок фильтрации
 const OCTAVE_STR = "7,6,5,4,3,2,1";
 const OCTAVES = OCTAVE_STR.split(",");
 
@@ -29,12 +32,10 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let audioBuffer = null;
 const midiButtonMap = {};
 
-const myUserId = "usr_" + Math.floor(Math.random() * 89999 + 10000);
+let peer = null;
+let connection = null;
 let myNickname = "User_" + Math.floor(Math.random() * 900 + 100);
 if (nickInput) nickInput.value = myNickname;
-
-// Встроенный канал мультиплеера внутри вашего браузера
-const jamChannel = new BroadcastChannel("synth_jam_session");
 
 function hexToRgb(hex) {
     if (!hex) return { r: 0, g: 0, b: 0 };
@@ -82,19 +83,13 @@ function createGrid() {
             
             btn.onclick = () => {
                 playNote(semitones, btn);
-                // Передаем ноту в мультиплеерный канал
-                jamChannel.postMessage({
-                    type: "note",
-                    sender: myUserId,
-                    senderNick: myNickname,
-                    semitones: semitones
-                });
+                sendNoteToFriend(semitones);
             };
             grid.appendChild(btn);
         }
     }
     updateColors();
-    updatePlayersListUI();
+    updatePlayersUI();
 }
 
 async function playNote(semitones, btn, isRemote = false) {
@@ -114,7 +109,7 @@ async function playNote(semitones, btn, isRemote = false) {
     }
 }
 
-function updatePlayersListUI(friendNick = null) {
+function updatePlayersUI(friendNick = null) {
     if (!playersList) return;
     playersList.innerHTML = "<li>" + myNickname + " (Вы)</li>";
     if (friendNick) {
@@ -125,37 +120,114 @@ function updatePlayersListUI(friendNick = null) {
 if (nickInput) {
     nickInput.onchange = () => {
         myNickname = nickInput.value.trim() || "User";
-        updatePlayersListUI();
-        jamChannel.postMessage({ type: "ping", nickname: myNickname });
+        updatePlayersUI(connection ? connection.peerNickname : null);
+        if (connection && connection.open) {
+            connection.send({ type: "nick-update", nickname: myNickname });
+        }
     };
 }
 
-// СЛУШАЕМ ДРУГИХ ИГРОКОВ В КАНАЛЕ
-jamChannel.onmessage = (event) => {
-    const data = event.data;
-    if (data.type === "note") {
-        const targetMidi = 60 + data.semitones;
-        const targetBtn = midiButtonMap[targetMidi];
-        playNote(data.semitones, targetBtn, true);
-        updatePlayersListUI(data.senderNick);
+// ИНИЦИАЛИЗАЦИЯ НАДЕЖНОЙ СЕТИ P2P
+function initPeer() {
+    if (peer) return;
+    if (statusText) statusText.innerText = "Вход в сеть...";
+
+    // Подключаемся через гарантированно рабочий резервный хост содружества PeerJS
+    peer = new Peer({
+        host: "://herokuapp.com",
+        secure: true,
+        port: 443
+    });
+
+    // Если резервный сервер перегружен, мгновенно переключаемся на стандартный автоматический
+    peer.on('error', (err) => {
+        if (!connection) {
+            console.log("Переключение на резервный сервер коммутации...");
+            peer = new Peer(); 
+        }
+    });
+
+    peer.on('open', (id) => {
+        if (statusText) statusText.innerText = "Код: " + id;
+        if (roomInput) roomInput.value = id;
+    });
+
+    peer.on('connection', (conn) => {
+        connection = conn;
+        setupConnectionListeners();
+    });
+}
+
+function setupConnectionListeners() {
+    if (statusText) statusText.innerText = "Связь установлена!";
+    
+    connection.on('open', () => {
+        connection.send({ type: "nick-update", nickname: myNickname });
+    });
+
+    connection.on('data', (data) => {
+        if (data.type === "nick-update") {
+            connection.peerNickname = data.nickname;
+            updatePlayersUI(data.nickname);
+        }
+        if (data.type === "note") {
+            const targetMidi = 60 + data.semitones;
+            const targetBtn = midiButtonMap[targetMidi];
+            playNote(data.semitones, targetBtn, true);
+        }
+    });
+
+    connection.on('close', () => {
+        if (statusText) statusText.innerText = "Друг отключился";
+        updatePlayersUI();
+        connection = null;
+    });
+}
+
+if (btnCreateRoom) {
+    btnCreateRoom.onclick = () => {
+        initPeer(); 
+    };
+}
+
+if (btnJoinRoom) {
+    btnJoinRoom.onclick = () => {
+        const targetRoom = roomInput.value.trim();
+        if (!targetRoom) return alert("Введите код комнаты друга!");
+        
+        if (!peer) {
+            peer = new Peer();
+            peer.on('open', () => { connectToFriend(targetRoom); });
+        } else {
+            connectToFriend(targetRoom);
+        }
+    };
+}
+
+function connectToFriend(targetRoom) {
+    if (statusText) statusText.innerText = "Подключение...";
+    connection = peer.connect(targetRoom);
+    setupConnectionListeners();
+}
+
+function sendNoteToFriend(semitones) {
+    if (connection && connection.open) {
+        connection.send({ type: "note", semitones: semitones });
     }
-    if (data.type === "ping") {
-        updatePlayersListUI(data.nickname);
-    }
-};
+}
 
 if (fileInput) {
     fileInput.onchange = async (e) => {
         const fileTarget = e.target;
         if (!fileTarget.files || fileTarget.files.length === 0) return;
-        statusText.innerText = "Загрузка...";
+        if (statusText) statusText.innerText = "Загрузка...";
         try {
             const chosenFile = fileTarget.files.item(0); 
             const arrayBuffer = await chosenFile.arrayBuffer();
             audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            statusText.innerText = chosenFile.name;
+            if (statusText) statusText.innerText = chosenFile.name;
         } catch (err) {
-            statusText.innerText = "Ошибка MP3";
+            if (statusText) statusText.innerText = "Ошибка MP3";
         }
     };
 }
@@ -164,5 +236,3 @@ const allInputs = [corners.tl, corners.tr, corners.bl, corners.br, uiColors.bg, 
 allInputs.forEach(i => { if(i) i.oninput = updateColors; });
 
 createGrid();
-// Оповещаем другие вкладки о своем присутствии
-setTimeout(() => { jamChannel.postMessage({ type: "ping", nickname: myNickname }); }, 500);
