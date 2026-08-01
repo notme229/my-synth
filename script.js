@@ -2,12 +2,9 @@ const grid = document.getElementById('synth-grid');
 const fileInput = document.getElementById('audio-file');
 const statusText = document.getElementById('status-text');
 const panel = document.getElementById('main-panel');
-const nickInput = document.getElementById('nickname-input');
-const playersList = document.getElementById('players-list');
 
-const btnCreateRoom = document.getElementById('btn-create-room');
-const btnJoinRoom = document.getElementById('btn-join-room');
-const roomInput = document.getElementById('room-input');
+const btnRecord = document.getElementById('btn-record');
+const recStatus = document.getElementById('rec-status');
 
 const corners = {
     tl: document.getElementById('color-tl'),
@@ -32,10 +29,13 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let audioBuffer = null;
 const midiButtonMap = {};
 
-let peer = null;
-let connection = null;
-let myNickname = "User_" + Math.floor(Math.random() * 900 + 100);
-if (nickInput) nickInput.value = myNickname;
+let destNode = audioCtx.createMediaStreamDestination();
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+let midiEvents = [];
+let recordStartTime = 0;
 
 function hexToRgb(hex) {
     if (!hex) return { r: 0, g: 0, b: 0 };
@@ -83,156 +83,166 @@ function createGrid() {
             
             btn.onclick = () => {
                 playNote(semitones, btn);
-                sendNoteToFriend(semitones);
             };
             grid.appendChild(btn);
         }
     }
     updateColors();
-    updatePlayersUI();
 }
 
-async function playNote(semitones, btn, isRemote = false) {
+async function playNote(semitones, btn) {
     if (!audioBuffer) return;
     if (audioCtx.state === 'suspended') await audioCtx.resume();
+    
     const source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
     source.detune.value = semitones * 100;
+    
     source.connect(audioCtx.destination);
+    source.connect(destNode);
     source.start(0);
     
+    if (isRecording) {
+        const timestamp = Date.now() - recordStartTime;
+        const noteNumber = 60 + semitones;
+        midiEvents.push({ time: timestamp, note: noteNumber });
+    }
+
     if (btn) {
-        const playClass = isRemote ? 'remote-playing' : 'playing';
-        btn.classList.add(playClass);
+        btn.classList.add('playing');
         setTimeout(() => btn.classList.remove('playing'), 120);
-        setTimeout(() => btn.classList.remove('remote-playing'), 120);
     }
 }
 
-function updatePlayersUI(friendNick = null) {
-    if (!playersList) return;
-    playersList.innerHTML = "<li>" + myNickname + " (Вы)</li>";
-    if (friendNick) {
-        playersList.innerHTML += "<li>" + friendNick + "</li>";
-    }
-}
+if (btnRecord) {
+    btnRecord.onclick = () => {
+        if (!audioBuffer) return alert("Сначала загрузите аудиофайл!");
 
-if (nickInput) {
-    nickInput.onchange = () => {
-        myNickname = nickInput.value.trim() || "User";
-        updatePlayersUI(connection ? connection.peerNickname : null);
-        if (connection && connection.open) {
-            connection.send({ type: "nick-update", nickname: myNickname });
-        }
-    };
-}
+        if (!isRecording) {
+            isRecording = true;
+            audioChunks = [];
+            midiEvents = [];
+            recordStartTime = Date.now();
 
-// ИНИЦИАЛИЗАЦИЯ НАДЕЖНОЙ СЕТИ P2P
-function initPeer() {
-    if (peer) return;
-    if (statusText) statusText.innerText = "Вход в сеть...";
+            mediaRecorder = new MediaRecorder(destNode.stream);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
 
-    // Подключаемся через гарантированно рабочий резервный хост содружества PeerJS
-    peer = new Peer({
-        host: "://herokuapp.com",
-        secure: true,
-        port: 443
-    });
+            mediaRecorder.onstop = () => {
+                saveWavFile();
+                saveMidiFile();
+            };
 
-    // Если резервный сервер перегружен, мгновенно переключаемся на стандартный автоматический
-    peer.on('error', (err) => {
-        if (!connection) {
-            console.log("Переключение на резервный сервер коммутации...");
-            peer = new Peer(); 
-        }
-    });
-
-    peer.on('open', (id) => {
-        if (statusText) statusText.innerText = "Код: " + id;
-        if (roomInput) roomInput.value = id;
-    });
-
-    peer.on('connection', (conn) => {
-        connection = conn;
-        setupConnectionListeners();
-    });
-}
-
-function setupConnectionListeners() {
-    if (statusText) statusText.innerText = "Связь установлена!";
-    
-    connection.on('open', () => {
-        connection.send({ type: "nick-update", nickname: myNickname });
-    });
-
-    connection.on('data', (data) => {
-        if (data.type === "nick-update") {
-            connection.peerNickname = data.nickname;
-            updatePlayersUI(data.nickname);
-        }
-        if (data.type === "note") {
-            const targetMidi = 60 + data.semitones;
-            const targetBtn = midiButtonMap[targetMidi];
-            playNote(data.semitones, targetBtn, true);
-        }
-    });
-
-    connection.on('close', () => {
-        if (statusText) statusText.innerText = "Друг отключился";
-        updatePlayersUI();
-        connection = null;
-    });
-}
-
-if (btnCreateRoom) {
-    btnCreateRoom.onclick = () => {
-        initPeer(); 
-    };
-}
-
-if (btnJoinRoom) {
-    btnJoinRoom.onclick = () => {
-        const targetRoom = roomInput.value.trim();
-        if (!targetRoom) return alert("Введите код комнаты друга!");
-        
-        if (!peer) {
-            peer = new Peer();
-            peer.on('open', () => { connectToFriend(targetRoom); });
+            mediaRecorder.start();
+            btnRecord.classList.add('recording');
+            btnRecord.innerText = "⏹️ Стоп";
+            recStatus.innerText = "Запись...";
         } else {
-            connectToFriend(targetRoom);
+            isRecording = false;
+            mediaRecorder.stop();
+            btnRecord.classList.remove('recording');
+            btnRecord.innerText = "🔴 Запись";
+            recStatus.innerText = "Ожидание";
         }
     };
 }
 
-function connectToFriend(targetRoom) {
-    if (statusText) statusText.innerText = "Подключение...";
-    connection = peer.connect(targetRoom);
-    setupConnectionListeners();
+function saveWavFile() {
+    const blob = new Blob(audioChunks, { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'synth_record.wav';
+    a.click();
 }
 
-function sendNoteToFriend(semitones) {
-    if (connection && connection.open) {
-        connection.send({ type: "note", semitones: semitones });
-    }
+function saveMidiFile() {
+    if (midiEvents.length === 0) return;
+
+    let bytes = [
+        0x4D, 0x54, 0x68, 0x64, 
+        0x00, 0x00, 0x00, 0x06, 
+        0x00, 0x00,             
+        0x00, 0x01,             
+        0x00, 0x60              
+    ];
+
+    let trackData = [
+        0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20 
+    ];
+
+    let lastTime = 0;
+    midiEvents.forEach(evt => {
+        let deltaTime = Math.floor((evt.time - lastTime) * 0.5); 
+        if (deltaTime < 0) deltaTime = 0;
+        
+        trackData.push(deltaTime & 0x7F); 
+        trackData.push(0x90);     
+        trackData.push(evt.note); 
+        trackData.push(0x64);     
+
+        trackData.push(40); 
+        trackData.push(0x80);     
+        trackData.push(evt.note);
+        trackData.push(0x00);
+        
+        lastTime = evt.time + 80;
+    });
+
+    trackData.push(0x00, 0xFF, 0x2F, 0x00);
+
+    bytes.push(0x4D, 0x54, 0x72, 0x6B); 
+    let len = trackData.length;
+    bytes.push((len >> 24) & 0xFF, (len >> 16) & 0xFF, (len >> 8) & 0xFF, len & 0xFF);
+    bytes = bytes.concat(trackData);
+
+    const uint8 = new Uint8Array(bytes);
+    const blob = new Blob([uint8], { type: 'audio/midi' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'synth_record.mid';
+    a.click();
 }
 
 if (fileInput) {
     fileInput.onchange = async (e) => {
         const fileTarget = e.target;
         if (!fileTarget.files || fileTarget.files.length === 0) return;
-        if (statusText) statusText.innerText = "Загрузка...";
+        statusText.innerText = "Загрузка...";
         try {
+            // Исправлено: Сверхнадежный способ извлечения первого файла через встроенную функцию
             const chosenFile = fileTarget.files.item(0); 
             const arrayBuffer = await chosenFile.arrayBuffer();
             audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            if (statusText) statusText.innerText = chosenFile.name;
+            statusText.innerText = chosenFile.name;
         } catch (err) {
-            if (statusText) statusText.innerText = "Ошибка MP3";
+            statusText.innerText = "Ошибка MP3";
         }
     };
 }
 
 const allInputs = [corners.tl, corners.tr, corners.bl, corners.br, uiColors.bg, uiColors.panel];
 allInputs.forEach(i => { if(i) i.oninput = updateColors; });
+
+if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess().then(midi => {
+        for (let input of midi.inputs.values()) {
+            input.onmidimessage = (msg) => {
+                const midiData = Array.from(msg.data);
+                const cmd = midiData.shift();
+                const note = midiData.shift();
+                const vel = midiData.shift();
+                
+                if (cmd === 144 && vel > 0) {
+                    const btn = midiButtonMap[note];
+                    const semitones = note - 60;
+                    playNote(semitones, btn);
+                }
+            };
+        }
+    });
+}
 
 createGrid();
