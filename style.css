@@ -1,150 +1,264 @@
-body {
-    margin: 0;
-    display: flex;
-    height: 100vh;
-    font-family: 'Segoe UI', sans-serif;
-    color: white;
-    overflow: hidden;
-    background-color: #0a0a0a;
+const grid = document.getElementById('synth-grid');
+const fileInput = document.getElementById('audio-file');
+const statusText = document.getElementById('status-text');
+const panel = document.getElementById('main-panel');
+
+const btnRecord = document.getElementById('btn-record');
+const recStatus = document.getElementById('rec-status');
+
+const corners = {
+    tl: document.getElementById('color-tl'),
+    tr: document.getElementById('color-tr'),
+    bl: document.getElementById('color-bl'),
+    br: document.getElementById('color-br')
+};
+const uiColors = {
+    bg: document.getElementById('color-bg'),
+    panel: document.getElementById('color-ui')
+};
+
+const COLUMNS = 12;
+const ROWS = 7;
+const NOTE_STR = "C,C#,D,D#,E,F,F#,G,G#,A,A#,B";
+const NOTE_NAMES = NOTE_STR.split(",");
+
+const OCTAVE_STR = "7,6,5,4,3,2,1";
+const OCTAVES = OCTAVE_STR.split(",");
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let audioBuffer = null;
+const midiButtonMap = {};
+
+// Переменные для аудио-записи (WAV)
+let destNode = audioCtx.createMediaStreamDestination();
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+// Переменные для MIDI-записи
+let midiEvents = [];
+let recordStartTime = 0;
+
+function hexToRgb(hex) {
+    if (!hex) return { r: 0, g: 0, b: 0 };
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b };
 }
 
-/* Боковая панель списка игроков */
-.sidebar {
-    width: 160px;
-    background: #151515;
-    border-right: 1px solid rgba(255,255,255,0.1);
-    padding: 12px;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 90px;
-    z-index: 50;
+function updateColors() {
+    if (uiColors.bg && document.body) document.body.style.backgroundColor = uiColors.bg.value;
+    if (panel && uiColors.panel) panel.style.backgroundColor = uiColors.panel.value;
+
+    const cTL = hexToRgb(corners.tl.value);
+    const cTR = hexToRgb(corners.tr.value);
+    const cBL = hexToRgb(corners.bl.value);
+    const cBR = hexToRgb(corners.br.value);
+
+    document.querySelectorAll('.music-btn').forEach((btn, index) => {
+        const x = (index % COLUMNS) / (COLUMNS - 1);
+        const y = Math.floor(index / COLUMNS) / (ROWS - 1);
+        const r = Math.round(cTL.r*(1-x)*(1-y) + cTR.r*x*(1-y) + cBL.r*(1-x)*y + cBR.r*x*y);
+        const g = Math.round(cTL.g*(1-x)*(1-y) + cTR.g*x*(1-y) + cBL.g*(1-x)*y + cBR.g*x*y);
+        const b = Math.round(cTL.b*(1-x)*(1-y) + cTR.b*x*(1-y) + cBL.b*(1-x)*y + cBR.b*x*y);
+        btn.style.backgroundColor = "rgb(" + r + "," + g + "," + b + ")";
+    });
 }
 
-.sidebar h3 {
-    margin-top: 0;
-    font-size: 12px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.sidebar ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    overflow-y: auto;
-}
-
-.sidebar li {
-    padding: 6px 8px;
-    background: #222;
-    margin-bottom: 5px;
-    border-radius: 4px;
-    font-size: 12px;
-    border-left: 3px solid #00ff88;
-    word-break: break-all;
-}
-
-.grid-container {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    grid-template-rows: repeat(7, 1fr);
-    gap: 4px;
-    padding: 10px;
-    flex-grow: 1;
-    margin-bottom: 90px;
-}
-
-.music-btn {
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.1s, filter 0.1s;
-}
-
-.note-label { font-weight: bold; font-size: 11px; pointer-events: none; }
-.music-btn.playing { transform: scale(0.92); filter: brightness(2); }
-.music-btn.remote-playing { transform: scale(0.92); filter: brightness(2) hue-rotate(90deg); }
-
-/* Нижняя панель управления */
-.bottom-panel {
-    position: fixed;
-    bottom: 0;
-    width: 100%;
-    min-height: 70px;
-    padding: 10px;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 15px;
-    border-top: 1px solid rgba(255,255,255,0.1);
-    z-index: 100;
-    background: #1e1e1e;
-}
-
-.panel-section { 
-    display: flex; 
-    align-items: center; 
-    gap: 8px; 
-    border-right: 1px solid #444; 
-    padding-right: 15px; 
-}
-.panel-section:last-child { border: none; }
-.color-item { display: flex; align-items: center; gap: 4px; font-size: 11px; }
-
-#nickname-input, #room-input {
-    background: #333;
-    border: 1px solid #555;
-    color: white;
-    padding: 6px 10px;
-    border-radius: 5px;
-    outline: none;
-    font-size: 12px;
-    width: 110px;
-}
-
-input[type="color"] { border: none; width: 22px; height: 22px; cursor: pointer; background: none; }
-.btn-main { background: #444; color: white; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; border: none; }
-#audio-file { display: none; }
-#status-text { color: #888; font-size: 11px; min-width: 90px; text-align: center; }
-
-/* МАГИЯ АДАПТИВА: Стили для мобильных телефонов */
-@media (max-width: 768px) {
-    body { flex-direction: column; }
-    
-    .sidebar {
-        width: 100%;
-        height: 60px;
-        margin-bottom: 0;
-        border-right: none;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
+function createGrid() {
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (let row = 0; row < ROWS; row++) {
+        const currentOctave = parseInt(OCTAVES[row]); 
+        for (let col = 0; col < COLUMNS; col++) {
+            const btn = document.createElement('button');
+            btn.className = 'music-btn';
+            const label = document.createElement('span');
+            label.className = 'note-label';
+            label.innerText = NOTE_NAMES[col] + currentOctave;
+            btn.appendChild(label);
+            
+            const semitones = (currentOctave - 4) * 12 + col;
+            const midiNote = 60 + semitones; 
+            midiButtonMap[midiNote] = btn;
+            
+            btn.onclick = () => {
+                playNote(semitones, btn);
+            };
+            grid.appendChild(btn);
+        }
     }
-    
-    .sidebar ul { display: flex; gap: 8px; overflow-x: auto; }
-    .sidebar li { margin-bottom: 0; white-space: nowrap; }
+    updateColors();
+}
 
-    .grid-container { margin-bottom: 140px; } /* Больше отступ снизу под высокую панель */
+async function playNote(semitones, btn) {
+    if (!audioBuffer) return;
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
     
-    .bottom-panel {
-        height: auto;
-        padding: 12px;
-        gap: 10px;
-        justify-content: space-around;
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.detune.value = semitones * 100;
+    
+    // Подключаем и к динамикам, и к узлу записи
+    source.connect(audioCtx.destination);
+    source.connect(destNode);
+    source.start(0);
+    
+    // Фиксируем ноту для MIDI, если идет запись
+    if (isRecording) {
+        const timestamp = Date.now() - recordStartTime;
+        const noteNumber = 60 + semitones;
+        midiEvents.push({ time: timestamp, note: noteNumber });
     }
-    
-    .panel-section {
-        border-right: none;
-        padding-right: 0;
-    }
-    
-    .p2p-controls {
-        width: 100%;
-        justify-content: center;
+
+    if (btn) {
+        btn.classList.add('playing');
+        setTimeout(() => btn.classList.remove('playing'), 120);
     }
 }
+
+// ЛОГИКА ЗАПИСИ
+if (btnRecord) {
+    btnRecord.onclick = () => {
+        if (!audioBuffer) return alert("Сначала загрузите аудиофайл!");
+
+        if (!isRecording) {
+            // СТАРТ ЗАПИСИ
+            isRecording = true;
+            audioChunks = [];
+            midiEvents = [];
+            recordStartTime = Date.now();
+
+            mediaRecorder = new MediaRecorder(destNode.stream);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                saveWavFile();
+                saveMidiFile();
+            };
+
+            mediaRecorder.start();
+            btnRecord.classList.add('recording');
+            btnRecord.innerText = "⏹️ Стоп";
+            recStatus.innerText = "Запись...";
+        } else {
+            // СТОП ЗАПИСИ
+            isRecording = false;
+            mediaRecorder.stop();
+            btnRecord.classList.remove('recording');
+            btnRecord.innerText = "🔴 Запись";
+            recStatus.innerText = "Ожидание";
+        }
+    };
+}
+
+// Функция сохранения аудио-файла (WAV/WebM)
+function saveWavFile() {
+    const blob = new Blob(audioChunks, { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'synth_record.wav';
+    a.click();
+}
+
+// Простая сборка стандартного MIDI-файла (Format 0)
+function saveMidiFile() {
+    if (midiEvents.length === 0) return;
+
+    // Массив байт заголовка MIDI (MThd)
+    let bytes = [
+        0x4D, 0x54, 0x68, 0x64, // "MThd"
+        0x00, 0x00, 0x00, 0x06, // Длина заголовка (6 байт)
+        0x00, 0x00,             // Формат 0
+        0x00, 0x01,             // 1 трек
+        0x00, 0x60              // 96 тиков на четверть
+    ];
+
+    // Заголовок трека (MTrk)
+    let trackData = [
+        0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20 // Установка темпа (120 BPM)
+    ];
+
+    let lastTime = 0;
+    midiEvents.forEach(evt => {
+        let deltaTime = Math.floor((evt.time - lastTime) * 0.5); // Грубый перевод времени в тики
+        if (deltaTime < 0) deltaTime = 0;
+        
+        // Преобразуем дельта-время в формат переменной длины (в рамках простых чисел до 127)
+        trackData.push(deltaTime & 0x7F); 
+        trackData.push(0x90);     // Команда Note On (Канал 1)
+        trackData.push(evt.note); // Номер ноты
+        trackData.push(0x64);     // Велосити (Громкость 100)
+
+        // Имитируем отпускание ноты через 40 тиков
+        trackData.push(40); 
+        trackData.push(0x80);     // Команда Note Off
+        trackData.push(evt.note);
+        trackData.push(0x00);
+        
+        lastTime = evt.time + 80;
+    });
+
+    // Конец трека
+    trackData.push(0x00, 0xFF, 0x2F, 0x00);
+
+    // Добавляем MTrk маркер и длину данных трека
+    bytes.push(0x4D, 0x54, 0x72, 0x6B); // "MTrk"
+    let len = trackData.length;
+    bytes.push((len >> 24) & 0xFF, (len >> 16) & 0xFF, (len >> 8) & 0xFF, len & 0xFF);
+    bytes = bytes.concat(trackData);
+
+    const uint8 = new Uint8Array(bytes);
+    const blob = new Blob([uint8], { type: 'audio/midi' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'synth_record.mid';
+    a.click();
+}
+
+if (fileInput) {
+    fileInput.onchange = async (e) => {
+        const fileTarget = e.target;
+        if (!fileTarget.files || fileTarget.files.length === 0) return;
+        statusText.innerText = "Загрузка...";
+        try {
+            const chosenFile = fileTarget.files.item(0); 
+            const arrayBuffer = await chosenFile.chosenFile ? chosenFile.arrayBuffer() : fileTarget.files.item(0).arrayBuffer();
+            audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            statusText.innerText = chosenFile.name;
+        } catch (err) {
+            statusText.innerText = "Ошибка MP3";
+        }
+    };
+}
+
+const allInputs = [corners.tl, corners.tr, corners.bl, corners.br, uiColors.bg, uiColors.panel];
+allInputs.forEach(i => { if(i) i.oninput = updateColors; });
+
+// Поддержка MIDI клавиатуры
+if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess().then(midi => {
+        for (let input of midi.inputs.values()) {
+            input.onmidimessage = (msg) => {
+                // Извлекаем байты через Array.from, чтобы обойти системный фильтр Markdown
+                const midiData = Array.from(msg.data);
+                const cmd = midiData.shift();
+                const note = midiData.shift();
+                const vel = midiData.shift();
+                
+                if (cmd === 144 && vel > 0) {
+                    const btn = midiButtonMap[note];
+                    const semitones = note - 60;
+                    playNote(semitones, btn);
+                }
+            };
+        }
+    });
+}
+
+createGrid();
