@@ -2,25 +2,15 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Мультиплеерный Сэмплер 12х7</title>
+    <title>Сэмплер 12х7 с записью WAV/MIDI</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Подключаем мировую библиотеку PeerJS -->
-    <script src="https://unpkg.com"></script>
 </head>
 <body>
 
-    <!-- Боковая панель списка игроков -->
-    <div class="sidebar" id="players-sidebar">
-        <h3>В комнате:</h3>
-        <ul id="players-list">
-            <!-- Здесь будут ники подключенных людей -->
-        </ul>
-    </div>
-
-    <!-- Основная сетка кнопок -->
+    <!-- Сетка кнопок -->
     <div id="synth-grid" class="grid-container"></div>
 
-    <!-- Нижняя панель управления -->
+    <!-- Панель управления -->
     <div class="bottom-panel" id="main-panel">
         <div class="panel-section">
             <label class="btn-main">
@@ -29,16 +19,10 @@
             </label>
         </div>
 
-        <!-- Поле для ввода Ника -->
-        <div class="panel-section">
-            <input type="text" id="nickname-input" placeholder="Ваш ник..." maxlength="15">
-        </div>
-
-        <!-- Кнопки мультиплеера -->
-        <div class="panel-section p2p-controls">
-            <button id="btn-create-room" class="btn-main">🏠 Создать комнату</button>
-            <input type="text" id="room-input" placeholder="Код комнаты..." maxlength="15">
-            <button id="btn-join-room" class="btn-main">🔌 Войти</button>
+        <!-- Кнопки управления записью -->
+        <div class="panel-section record-controls">
+            <button id="btn-record" class="btn-main btn-rec">🔴 Запись</button>
+            <div id="rec-status">Ожидание</div>
         </div>
 
         <div class="panel-section colors">
